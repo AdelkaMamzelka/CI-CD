@@ -1,0 +1,79 @@
+stages:
+  - build
+  - style
+  - test
+  - deploy
+
+.notify: &notify
+  - |
+    TEXT="+$CI_JOB_STAGE status: +$CI_JOB_STATUS $1%0A%0AProject:+$CI_PROJECT_NAME%0AURL:+$CI_PROJECT_URL/pipelines/$CI_PIPELINE_ID/%0ABranch:+$CI_COMMIT_REF_SLUG"
+    curl -s --max-time "10" -d "chat_id=2029176954&disable_web_page_preview=1&text=$TEXT" "https://api.telegram.org/bot7509684984:AAEtN9ffIiC7Ag7d60x4psjVgKBGz8bLOCI/sendMessage" > "/dev/null"
+    
+style-job:
+  stage: style
+  tags:
+    - style
+  script:
+    - clang-format -style=Google -Werror -n src/cat/s21_cat.* src/grep/s21_grep.* 
+  after_script:
+    - echo "Style check completed"
+    - *notify
+  only:
+    - develop 
+
+build-job:
+  stage: build
+  tags:
+    - build
+  script:
+    - cd src/cat && make s21_cat && cd ./../grep && make s21_grep
+  after_script:
+   - echo "Build check completed"
+   - *notify
+  artifacts:
+    paths:
+        - src/cat/s21_cat
+        - src/cat/s21_grep
+    expire_in: 30 days
+  only:
+    - develop
+
+test-job:
+  stage: test
+  tags:
+    - test
+  script:
+    - (cd src/cat && make test) 2>/dev/null 1>cat_test.txt
+    - (cd src/grep && make test) 2>/dev/null 1>grep_test.txt
+    - |
+      if grep -q "FAILED: 0" cat_test.txt && grep -q "FAILED: 0" grep_test.txt; then
+        exit 1
+      fi
+  after_script:
+    - echo "Test check completed"
+    - *notify
+  only:
+    - develop
+
+deploy-job:
+  stage: deploy
+  tags:
+    - deploy
+  when: manual
+  script:
+    - |
+      pwd
+      cd ./src/cat && make s21_cat && cd ./../grep && make s21_grep && cd ../../
+      if scp ./src/cat/s21_cat ./src/grep/s21_grep lemonkyl@192.10.10.1:/usr/local/bin/ ; then
+     
+        echo -e "\e[32mSuccesfully copy artifacts to /usr/local/bin\e[0m"
+      else
+        echo -e "\e[31mCAN'T COPY ARTIFACTS\e[0m"
+        exit 1
+      fi
+  after_script:
+    - echo "Deploy check completed"
+    - *notify
+  only:
+    - develop
+
